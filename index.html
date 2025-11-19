@@ -88,7 +88,7 @@
       };
 
       try {
-        const resp = await fetch("https://callmenow.onrender.com", {
+        const resp = await fetch("https://callmenow.onrender.com/api/callback", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
