@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Genesys Cloud – Call Me Now</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, Arial, sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; margin:0; background:#f6f8fa; }
+    form { background:white; padding:2rem; border-radius:12px; box-shadow:0 6px 24px rgba(0,0,0,.08); width:320px; }
+    h3 { margin-top:0; margin-bottom:1rem; font-weight:600; }
+    input, button { width:100%; margin-bottom:0.75rem; padding:0.75rem; border:1px solid #d0d7de; border-radius:8px; font-size:16px; }
+    input:focus { outline: 2px solid #1f6feb33; border-color:#1f6feb; }
+    button { background:#1f6feb; color:white; border:none; cursor:pointer; font-weight:600; }
+    button:hover { background:#1158c7; }
+    small { color:#57606a; display:block; margin-top:0.25rem; }
+    #result { min-height:1.25rem; }
+    details { margin-top: .5rem; }
+    .pass { color: #1a7f37; }
+    .fail { color: #d1242f; }
+  </style>
+</head>
+<body>
+  <!-- Minimal customer-facing form -->
+  <form id="callbackForm" autocomplete="on" novalidate>
+    <h3>Call Me Now</h3>
+    <label>
+      <input type="text" id="name" placeholder="Your Name" required aria-label="Your Name">
+    </label>
+    <label>
+      <input type="tel" id="phone" placeholder="+49 160 1234567" required aria-label="Phone Number">
+      <small>Enter phone in international format (E.164), e.g., +49691234567</small>
+    </label>
+    <button type="submit">Call Me Now</button>
+    <p id="result" role="status" aria-live="polite"></p>
+
+    <!-- Dev-only diagnostics (collapsed) -->
+    <details>
+      <summary>Diagnostics & Self‑Test</summary>
+      <div style="font-size:14px;">
+        <p><strong>Expected setup</strong>: This page should POST to a <code>/api/callback</code> proxy running in your environment (Node/Express) which obtains a token from <code>https://login.mypurecloud.de</code> and calls <code>https://api.mypurecloud.de/api/v2/conversations/callbacks</code>. No browser token is needed.</p>
+        <button type="button" id="runTests">Run self‑tests</button>
+        <ul id="testOutput"></ul>
+      </div>
+    </details>
+  </form>
+
+  <script>
+    // IMPORTANT: we removed direct calls to the Genesys API to avoid CORS and sandbox load failures.
+    // The form now posts to your local/proxy endpoint: /api/callback
+    // See the provided server.js sample from the project ZIP to run this proxy.
+
+    const QUEUE_ID = "207c4074-14c8-4116-885e-b91d8638a922"; // EU Central queue provided
+
+    // Simple E.164-ish validation (allows leading + and 8-15 digits)
+    function isValidE164(num) {
+      return /^\+?[1-9]\d{7,14}$/.test(num.replace(/\s|-/g, ""));
+    }
+
+    document.getElementById("callbackForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = document.getElementById("name").value.trim();
+      const phoneRaw = document.getElementById("phone").value.trim();
+      const result = document.getElementById("result");
+      const phone = phoneRaw.replace(/\s|-/g, "");
+
+      if (!name) {
+        result.style.color = "#d1242f";
+        result.textContent = "Please enter your name.";
+        return;
+      }
+      if (!isValidE164(phone)) {
+        result.style.color = "#d1242f";
+        result.textContent = "Please enter a valid phone number in E.164 format (e.g., +49691234567).";
+        return;
+      }
+
+      result.style.color = "#24292f";
+      result.textContent = "Submitting request...";
+
+      const payload = {
+        queueId: QUEUE_ID,
+        callbackUserName: name,
+        // The Conversations Callback API expects an array named callbackNumbers
+        // See 400 error: "callbackNumbers is required"
+        callbackNumbers: [phone],
+        data: { source: "CallMeNowForm" }
+      };
+
+      try {
+        const resp = await fetch("/api/callback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        result.style.color = "#1a7f37";
+        result.textContent = "✅ Callback request created! We’ll call you shortly.";
+        e.target.reset();
+      } catch (err) {
+        console.error(err);
+        result.style.color = "#d1242f";
+        result.innerHTML = "❌ Error creating callback. Ensure your proxy <code>/api/callback</code> is running and reachable.";
+      }
+    });
+
+    // ---- Self-tests (no external calls) ----
+    document.getElementById('runTests').addEventListener('click', () => {
+      const out = document.getElementById('testOutput');
+      out.innerHTML = '';
+      const cases = [
+        { name: 'E.164 valid +49691234567', fn: () => isValidE164('+49691234567') === true },
+        { name: 'E.164 valid +15551234567', fn: () => isValidE164('+15551234567') === true },
+        { name: 'E.164 invalid 0049...', fn: () => isValidE164('00491234567') === false },
+        { name: 'E.164 invalid +12', fn: () => isValidE164('+12') === false },
+        { name: 'Payload contains queueId', fn: () => ({queueId:QUEUE_ID}).queueId === '207c4074-14c8-4116-885e-b91d8638a922' }
+      ];
+      for (const t of cases) {
+        const li = document.createElement('li');
+        let ok = false;
+        try { ok = !!t.fn(); } catch { ok = false; }
+        li.textContent = (ok ? '✓ ' : '✗ ') + t.name;
+        li.className = ok ? 'pass' : 'fail';
+        out.appendChild(li);
+      }
+    });
+  </script>
+</body>
+</html>
